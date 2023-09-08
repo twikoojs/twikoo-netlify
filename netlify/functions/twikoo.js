@@ -55,6 +55,7 @@ const { RES_CODE } = require('twikoo-func/utils/constants')
 let db = null
 let config
 let accessToken
+const requestTimes = {}
 
 /**
  * https://docs.netlify.com/functions/create/?fn-language=js
