@@ -49,7 +49,7 @@ const logger = require('twikoo-func/utils/logger')
 const DOMPurify = getDomPurify()
 
 // 常量 / constants
-const { RES_CODE } = require('twikoo-func/utils/constants')
+const { RES_CODE, MAX_REQUEST_TIMES } = require('twikoo-func/utils/constants')
 
 // 全局变量 / variables
 let db = null
