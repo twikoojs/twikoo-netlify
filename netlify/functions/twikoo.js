@@ -69,7 +69,10 @@ exports.handler = async function (netlifyEvent, netlifyContext) {
   //   "body": "A JSON string of the request payload",
   //   "isBase64Encoded": "A boolean flag to indicate if the applicable request payload is Base64-encoded"
   // }
-  const event = JSON.stringify(netlifyEvent.body) || {}
+  let event = {}
+  try {
+    event = JSON.parse(netlifyEvent.body)
+  } catch(e) {}
   logger.log('请求 IP：', getIp(netlifyEvent))
   logger.log('请求函数：', event.event)
   logger.log('请求参数：', event)
