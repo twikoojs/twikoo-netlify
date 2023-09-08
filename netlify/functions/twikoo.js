@@ -4,8 +4,9 @@
  * Released under the MIT License.
  */
 
-const { version: VERSION } = require('../package.json')
+const { version: VERSION } = require('../../package.json')
 const MongoClient = require('mongodb').MongoClient
+const getUserIP = require('get-user-ip')
 const { URL } = require('url')
 const { v4: uuidv4 } = require('uuid') // 用户 id 生成
 const {
@@ -68,11 +69,13 @@ exports.handler = async function (netlifyEvent, netlifyContext) {
   //   "isBase64Encoded": "A boolean flag to indicate if the applicable request payload is Base64-encoded"
   // }
   const event = JSON.stringify(netlifyEvent.body) || {}
+  logger.log('请求 IP：', getIp(netlifyEvent))
   logger.log('请求函数：', event.event)
   logger.log('请求参数：', event)
   let res = {}
   let headers = {}
   try {
+    protect(netlifyEvent)
     accessToken = anonymousSignIn({ body: event })
     await connectToDatabase(process.env.MONGODB_URI)
     await readConfig()
@@ -107,7 +110,7 @@ exports.handler = async function (netlifyEvent, netlifyContext) {
         res = await commentLike(event)
         break
       case 'COMMENT_SUBMIT':
-        res = await commentSubmit(event)
+        res = await commentSubmit(event, netlifyEvent)
         break
       case 'POST_SUBMIT':
         res = await postSubmit(event.comment, netlifyEvent)
@@ -610,14 +613,14 @@ async function like (id, uid) {
  * @param {String} event.pid 回复的 ID
  * @param {String} event.rid 评论楼 ID
  */
-async function commentSubmit (event) {
+async function commentSubmit (event, request) {
   const res = {}
   // 参数校验
   validate(event, ['url', 'ua', 'comment'])
   // 限流
-  await limitFilter()
+  await limitFilter(request)
   // 预检测、转换
-  const data = await parse(event)
+  const data = await parse(event, request)
   // 保存
   const comment = await save(data)
   res.id = comment.id
@@ -668,7 +671,7 @@ async function postSubmit (comment, request) {
 }
 
 // 将评论转为数据库存储格式
-async function parse (comment) {
+async function parse (comment, request) {
   const timestamp = Date.now()
   const isAdminUser = isAdmin()
   const isBloggerMail = comment.mail && comment.mail === config.BLOGGER_EMAIL
@@ -681,7 +684,7 @@ async function parse (comment) {
     mailMd5: comment.mail ? md5(comment.mail) : '',
     link: comment.link ? comment.link : '',
     ua: comment.ua,
-    ip: '',
+    ip: getIp(request),
     master: isBloggerMail,
     url: comment.url,
     href: comment.href,
@@ -701,7 +704,21 @@ async function parse (comment) {
 }
 
 // 限流
-async function limitFilter () {
+async function limitFilter (request) {
+  // 限制每个 IP 每 10 分钟发表的评论数量
+  let limitPerMinute = parseInt(config.LIMIT_PER_MINUTE)
+  if (Number.isNaN(limitPerMinute)) limitPerMinute = 10
+  if (limitPerMinute) {
+    const count = await db
+      .collection('comment')
+      .countDocuments({
+        ip: getIp(request),
+        created: { $gt: Date.now() - 600000 }
+      })
+    if (count > limitPerMinute) {
+      throw new Error('发言频率过高')
+    }
+  }
   // 限制所有 IP 每 10 分钟发表的评论数量
   let limitPerMinuteAll = parseInt(config.LIMIT_PER_MINUTE_ALL)
   if (Number.isNaN(limitPerMinuteAll)) limitPerMinuteAll = 10
@@ -877,6 +894,18 @@ async function setConfig (event) {
   }
 }
 
+function protect (request) {
+  // 防御
+  const ip = getIp(request)
+  requestTimes[ip] = (requestTimes[ip] || 0) + 1
+  if (requestTimes[ip] > MAX_REQUEST_TIMES) {
+    logger.warn(`${ip} 当前请求次数为 ${requestTimes[ip]}，已超过最大请求次数`)
+    throw new Error('Too Many Requests')
+  } else {
+    logger.log(`${ip} 当前请求次数为 ${requestTimes[ip]}`)
+  }
+}
+
 // 读取配置
 async function readConfig () {
   try {
@@ -946,4 +975,17 @@ async function createCollections () {
     }
   }
   return res
+}
+
+function getIp (request) {
+  try {
+    const { TWIKOO_IP_HEADERS } = process.env
+    const headers = TWIKOO_IP_HEADERS ? JSON.parse(TWIKOO_IP_HEADERS) : [
+      'headers.x-nf-client-connection-ip'
+    ]
+    return getUserIP(request, headers)
+  } catch (e) {
+    logger.error('获取 IP 错误信息：', e)
+  }
+  return getUserIP(request)
 }
