@@ -13,25 +13,76 @@
 本模板固定使用 **Node 24**；新版 `twikoo-netlify` 的现代入口要求
 Node.js **>= 22.12.0**。
 
-## 升级兼容性
+## 不兼容升级说明
 
-> [!WARNING]
-> 不要在新版 `twikoo-netlify` 发布前使用本模板。旧包不提供受支持的现代默认入口，搭配本模板可能在构建或函数加载阶段失败。
+新版模板已从旧的 CommonJS Functions v1 入口切换到 Modern Netlify Functions：
 
-| `twikoo-netlify` 包 | 模板入口 | 结果 |
-| --- | --- | --- |
-| 旧版 | 旧 `require(...).handler` | 正常运行，但通知会同步等待 |
-| 新版 | 旧 `require(...).handler` | 功能兼容，但仍同步等待最多约 5 秒 |
-| 旧版 | 新 ESM 默认入口 | **不受支持**：可能在构建或函数加载阶段失败 |
-| 新版 | 新 ESM 默认入口 | 正常运行，通知由 `context.waitUntil()` 异步派发 |
+```text
+netlify/functions/twikoo.js
+        ↓
+netlify/functions/twikoo.mjs
+```
 
-正确升级顺序：
+这样 `twikoo-netlify` 才能使用 `context.waitUntil()` 异步执行
+`POST_SUBMIT`，避免邮件等后置通知阻塞评论提交。
 
-1. 等待包含现代默认入口的 `twikoo-netlify` 发布。
-2. 将 `package.json` 依赖更新到该版本，不要指向旧版本。
-3. 再部署本模板，并验证评论响应和后台通知。
+如果你的站点是从旧模板升级，不能只修改 npm 版本或只同步入口文件：
 
-只升级 npm 包但保留旧模板，不会启用异步派发，也不会改善评论提交耗时。
+- 只升级 `twikoo-netlify`、保留旧 `require(...).handler`：仍可运行，但继续走同步兼容路径，评论提交最多可能继续等待约 5 秒。
+- 只同步新版模板、仍安装旧版 `twikoo-netlify`：可能在构建或函数加载阶段失败。
+- 项目仍固定 Node 18/20：新版 Modern 入口无法满足依赖要求，需要 Node.js **>= 22.12.0**。
+- Sync fork 如果遇到 `twikoo.js` 删除 / `twikoo.mjs` 新增的冲突，可以按下面步骤手工完成升级。
+
+### 旧部署升级步骤
+
+1. 删除：
+
+   ```text
+   netlify/functions/twikoo.js
+   ```
+
+2. 新建：
+
+   ```text
+   netlify/functions/twikoo.mjs
+   ```
+
+   内容：
+
+   ```js
+   export { default } from "twikoo-netlify"
+   ```
+
+3. 确认 `package.json`：
+
+   ```json
+   {
+     "dependencies": {
+       "twikoo-netlify": "latest"
+     },
+     "engines": {
+       "node": ">=22.12.0"
+     }
+   }
+   ```
+
+4. 在仓库根目录增加或更新 `.node-version`：
+
+   ```text
+   24
+   ```
+
+   如果 Netlify 项目另外配置过 `NODE_VERSION`，也请确保不低于 22.12.0，建议使用 24。
+
+5. 提交修改后，在 Netlify 控制台执行：
+
+   ```text
+   Deploys → Trigger deploy → Clear cache and deploy site
+   ```
+
+6. 部署完成后先访问函数地址确认运行正常，再提交一条测试评论，确认评论快速返回且邮件 / 即时消息通知仍能收到。
+
+完成这次迁移后，后续正常升级只需要同步本仓库并重新部署即可。
 
 ## 更新
 
