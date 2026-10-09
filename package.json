@@ -1,6 +1,8 @@
 {
   "dependencies": {
-    "twikoo-netlify": "1.7.9",
-    "twikoo-vercel": "1.7.9"
+    "twikoo-netlify": "latest"
+  },
+  "engines": {
+    "node": ">=22.12.0"
   }
 }
