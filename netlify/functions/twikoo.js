@@ -1,1 +1,1 @@
-exports.handler = require('twikoo-netlify').handler
+export { default } from "twikoo-netlify"
